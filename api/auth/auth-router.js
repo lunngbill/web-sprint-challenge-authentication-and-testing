@@ -1,7 +1,34 @@
 const router = require('express').Router();
+const bcrypt = require('bcryptjs')
+const jwt = require('jsonwebtoken')
+const db = require('../../data/dbConfig')
+const { checkUsernameFree, checkCredentials } = require('../auth/auth-middleware')
 
-router.post('/register', (req, res) => {
-  res.end('implement register, please!');
+const JWT_SECRET = process.env.JWT_SECRET || 'shh'
+
+function generateToken(user) {
+   const payload = {
+    subject: user.id,
+    username: user.username,
+   }
+   const options = {
+    expiresIn: '1d',
+   }
+   return jwt.sign(payload, JWT_SECRET, options)
+}
+
+router.post('/register', checkCredentials, checkUsernameFree , async (req, res) => {
+  try {
+    const { username, password } = req.body
+    const hash = bcrypt.hashSync(password, 8)
+    const [id] = await db('users').insert({ username, password: hash})
+    const newUser = await db('users').where({ id }).first()
+
+    res.status(201).json(newUser)
+  } catch (err) {
+    res.status(500).json({ message: 'something went wrong', error: err.message})
+  }
+
   /*
     IMPLEMENT
     You are welcome to build additional middlewares to help with the endpoint's functionality.
@@ -29,8 +56,20 @@ router.post('/register', (req, res) => {
   */
 });
 
-router.post('/login', (req, res) => {
-  res.end('implement login, please!');
+router.post('/login', checkCredentials, async (req, res) => {
+  try {
+    const { username, password } = req.body
+    const user = await db('users').where({ username }).first()
+
+    if (user && bcrypt.compareSync(password, user.password)) {
+      const token = generateToken(user)
+      res.json({message: `welcome, ${user.username}`, token,})
+    } else {
+      res.status(401).json({message: 'invalid credentials'})
+    }
+  } catch (err) {
+    res.status(500).json({ message: 'something went wrong'})
+  }
   /*
     IMPLEMENT
     You are welcome to build additional middlewares to help with the endpoint's functionality.
